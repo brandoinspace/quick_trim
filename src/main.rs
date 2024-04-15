@@ -7,7 +7,6 @@ use eframe::egui::{self, Color32};
 
 // TODO:
 // - make async
-// - add output window
 // - scroll with images to select time instead of inputting manually
 // - windows right click open with
 fn main() -> Result<(), eframe::Error> {
