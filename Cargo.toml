@@ -1,0 +1,23 @@
+[package]
+name = "quick_trim"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+eframe = { version = "0.27.2", features = ["default", "__screenshot"] }
+
+env_logger = { version = "0.10", default-features = false, features = [
+    "auto-color",
+    "humantime",
+] }
+
+rfd = "0.14.1"
+# temp-dir = "0.1.13"
+
+# egui_extras = { version = "*", features = ["all_loaders"] }
+# image = { version = "0.24", features = ["png"] }
+# Computer\HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.mp4\OpenWithList
+# windows-registry = "0.1.1"
