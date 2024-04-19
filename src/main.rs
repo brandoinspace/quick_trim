@@ -1,14 +1,17 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::{env, process::Command};
+use std::{
+    env,
+    process::{Command, Stdio},
+};
 
 use eframe::egui::{self, Color32};
-// use temp_dir::TempDir;
 
 // TODO:
 // - make async
 // - scroll with images to select time instead of inputting manually
 // - windows right click open with
+// - make end and start trim use u32
 fn main() -> Result<(), eframe::Error> {
     env_logger::init();
     let options = eframe::NativeOptions {
@@ -113,6 +116,28 @@ impl eframe::App for QuickTrim {
                                     .pick_file()
                                 {
                                     self.picked_path = Some(path.display().to_string());
+                                    let cmd = Command::new("ffprobe")
+                                        .args([
+                                            "-v",
+                                            "error",
+                                            "-select_streams",
+                                            "v:0",
+                                            "-show_entries",
+                                            "stream=duration",
+                                            "-of",
+                                            "default=noprint_wrappers=1:nokey=1",
+                                            &self.picked_path.as_ref().unwrap(),
+                                        ])
+                                        .stderr(Stdio::piped())
+                                        .output()
+                                        .expect("Could not get video length!");
+                                    self.end_trim = String::from_utf8_lossy(&cmd.stdout)
+                                        .into_owned()
+                                        .trim_end()
+                                        .parse::<f32>()
+                                        .unwrap()
+                                        .round()
+                                        as i32;
                                 }
                             }
                             if let Some(picked_path) = &self.picked_path {
@@ -163,16 +188,11 @@ impl eframe::App for QuickTrim {
 
                         ui.label("Start Trim");
                         // From https://docs.rs/egui/latest/egui/widgets/struct.DragValue.html#method.custom_formatter
+                        let end_trim_clone = self.end_trim;
                         ui.add(
                             egui::DragValue::new(&mut self.start_trim)
-                                .clamp_range(0..=((60 * 60 * 24) - 1))
-                                .custom_formatter(|n, _| {
-                                    let n = n as i32;
-                                    let hours = n / (60 * 60);
-                                    let mins = (n / 60) % 60;
-                                    let secs = n % 60;
-                                    format!("{hours:02}:{mins:02}:{secs:02}")
-                                })
+                                .clamp_range(0..=end_trim_clone)
+                                .custom_formatter(|n, _| num_to_time(n as i32))
                                 .custom_parser(|s| {
                                     let parts: Vec<&str> = s.split(':').collect();
                                     if parts.len() == 3 {
@@ -198,7 +218,7 @@ impl eframe::App for QuickTrim {
                             ui.add_enabled(
                                 !self.trim_to_end,
                                 egui::DragValue::new(&mut self.end_trim)
-                                    .clamp_range(0..=((60 * 60 * 24) - 1))
+                                    .clamp_range(0..=end_trim_clone)
                                     .custom_formatter(|n, _| num_to_time(n as i32))
                                     .custom_parser(|s| {
                                         let parts: Vec<&str> = s.split(':').collect();
@@ -233,6 +253,8 @@ impl eframe::App for QuickTrim {
             });
 
             ui.add_space(20.0);
+
+            ui.add(scrubber(&mut self.start_trim, &mut self.end_trim));
 
             let mut args;
             if ui.button("Trim").clicked() {
@@ -364,4 +386,75 @@ fn num_to_time(n: i32) -> String {
     let mins = (n / 60) % 60;
     let secs = n % 60;
     format!("{hours:02}:{mins:02}:{secs:02}")
+}
+
+// custom scrubber widget
+
+pub fn scroll_scrubber(ui: &mut egui::Ui, start: &mut i32, end: &mut i32) -> egui::Response {
+    let scrub_size = ui.spacing().interact_size.y * egui::vec2(20.0, 2.0);
+    let left_scrub_size = ui.spacing().interact_size.y * egui::vec2(0.5, 1.0);
+    let right_scrub_size = ui.spacing().interact_size.y * egui::vec2(0.5, 1.0);
+
+    let (rect, response) = ui.allocate_exact_size(scrub_size, egui::Sense::hover());
+    let (mut left_rect, mut left_response) =
+        ui.allocate_exact_size(left_scrub_size, egui::Sense::drag());
+    let (mut right_rect, mut right_response) =
+        ui.allocate_exact_size(right_scrub_size, egui::Sense::drag());
+    right_rect.set_center(egui::pos2(
+        rect.right() - right_rect.center().x,
+        right_rect.center().y,
+    ));
+
+    ui.painter().rect_filled(rect, 0.0, Color32::DARK_GRAY);
+
+    if left_response.dragged() {
+        if left_response.drag_delta().x > 0.0 {
+            *start += left_response.drag_delta().x as i32;
+        }
+        if left_response.drag_delta().x < 0.0 {
+            *start -= i32::abs(left_response.drag_delta().x as i32);
+        }
+        left_response.mark_changed();
+    }
+
+    if right_response.dragged() {
+        if right_response.drag_delta().x > 0.0 {
+            *end += right_response.drag_delta().x as i32;
+        }
+        if right_response.drag_delta().x < 0.0 {
+            *end -= i32::abs(right_response.drag_delta().x as i32);
+        }
+        right_response.mark_changed();
+    }
+
+    let mut scrub_rect = rect;
+    if *start < rect.left() as i32 {
+        // use center instead ?
+        scrub_rect.set_left(rect.left());
+        left_rect.set_left(rect.left());
+    }
+    if *end > rect.right() as i32 {
+        scrub_rect.set_right(rect.right());
+        right_rect.set_right(rect.right());
+    }
+    if *start >= rect.left() as i32 || *end <= rect.right() as i32 {
+        scrub_rect.set_left(*start as f32);
+        scrub_rect.set_right(*end as f32);
+        left_rect.set_center(left_rect.center() + egui::vec2(*start as f32, 0.0));
+        right_rect.set_center(right_rect.center() + egui::vec2(*end as f32, 0.0));
+    }
+    if ui.is_rect_visible(rect) {
+        ui.painter()
+            .rect_filled(scrub_rect, 0.0, Color32::LIGHT_YELLOW);
+        ui.painter()
+            .rect_stroke(left_rect, 0.0, egui::Stroke::new(2.0, Color32::WHITE));
+        ui.painter()
+            .rect_stroke(right_rect, 0.0, egui::Stroke::new(2.0, Color32::WHITE));
+    }
+
+    response
+}
+
+pub fn scrubber<'a>(start: &'a mut i32, end: &'a mut i32) -> impl egui::Widget + 'a {
+    move |ui: &mut egui::Ui| scroll_scrubber(ui, start, end)
 }
