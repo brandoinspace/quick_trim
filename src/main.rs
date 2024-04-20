@@ -42,6 +42,7 @@ struct QuickTrim {
     trim_to_end: bool,
     overwrite: bool,
     slow_trim: bool,
+    scrubber_is_visible: bool,
     ffmpeg_gen_output_made: bool,
     ffmpeg_gen_output: Option<String>,
     opened_using_open_with_windows: bool,
@@ -64,6 +65,7 @@ impl Default for QuickTrim {
             trim_to_end: false,
             overwrite: true,
             slow_trim: false,
+            scrubber_is_visible: false,
             ffmpeg_gen_output_made: false,
             ffmpeg_gen_output: None,
             opened_using_open_with_windows: false,
@@ -136,6 +138,7 @@ impl eframe::App for QuickTrim {
                                         .round() as i32;
                                     self.start_trim = 0;
                                     self.video_length = self.end_trim as u32;
+                                    self.scrubber_is_visible = true;
                                 }
                             }
                             if let Some(picked_path) = &self.picked_path {
@@ -248,7 +251,10 @@ impl eframe::App for QuickTrim {
 
             ui.add_space(20.0);
 
-            ui.add(scrubber(&mut self.start_trim, &mut self.end_trim, self.video_length));
+            ui.add_visible(
+                self.scrubber_is_visible,
+                scrubber(&mut self.start_trim, &mut self.end_trim, self.video_length),
+            );
 
             let mut args;
             if ui.button("Trim").clicked() {
@@ -346,7 +352,7 @@ fn num_to_time(n: i32) -> String {
 
 // custom scrubber widget
 
-pub fn scroll_scrubber(ui: &mut egui::Ui, start: &mut i32, end: &mut i32, video_length: u32) -> egui::Response {
+pub fn scroll_scrubber(ui: &mut egui::Ui, start: &mut i32, end: &mut i32, _video_length: u32) -> egui::Response {
     let scrub_size = egui::vec2(360.0, 36.0);
     let drag_size = egui::vec2(360.0, 12.0);
 
@@ -357,9 +363,6 @@ pub fn scroll_scrubber(ui: &mut egui::Ui, start: &mut i32, end: &mut i32, video_
     let size = ui.spacing().interact_size.y * egui::vec2(0.5, 0.7);
     let mut left_drag_scrub_rect = egui::Rect::from_center_size(egui::pos2(rect.left() + (size.x / 2.0), left_drag_rect.center().y), size);
     let mut right_drag_scrub_rect = egui::Rect::from_center_size(egui::pos2(rect.right() - (size.x / 2.0), right_drag_rect.center().y), size);
-
-    ui.painter()
-        .rect(rect, 0.0, Color32::DARK_GRAY, egui::Stroke::new(1.0, Color32::DARK_GRAY));
 
     if left_response.dragged() {
         if left_response.drag_delta().x > 0.0 {
@@ -384,21 +387,28 @@ pub fn scroll_scrubber(ui: &mut egui::Ui, start: &mut i32, end: &mut i32, video_
     if *start < 0 {
         *start = 0;
     }
-    if *start > video_length as i32 {
-        *start = video_length as i32 - 1;
-    }
+    // if *start > video_length as i32 {
+    //     *start = video_length as i32 - 1;
+    // }
     // TODO: right scrubber does not move anymore
-    if *end > video_length as i32 {
-        *end = video_length as i32;
-    }
-    if *end < 0 {
-        *end = 1;
-    }
+    // if *end > video_length as i32 {
+    //     *end = video_length as i32;
+    // }
+    // if *end < 0 {
+    //     *end = 1;
+    // }
 
     let mut scrub_rect = rect;
 
     scrub_rect.set_left(*start as f32);
     scrub_rect.set_right(*end as f32);
+
+    if scrub_rect.left() < rect.left() {
+        scrub_rect.set_left(rect.left());
+    }
+    if scrub_rect.right() > rect.right() {
+        scrub_rect.set_right(rect.right());
+    }
 
     left_drag_scrub_rect.set_center(left_drag_scrub_rect.center() + egui::vec2(*start as f32, 0.0));
     right_drag_scrub_rect.set_center(right_drag_scrub_rect.center() + egui::vec2(*end as f32, 0.0));
@@ -418,6 +428,8 @@ pub fn scroll_scrubber(ui: &mut egui::Ui, start: &mut i32, end: &mut i32, video_
     }
 
     if ui.is_rect_visible(rect) {
+        ui.painter()
+            .rect(rect, 0.0, Color32::DARK_GRAY, egui::Stroke::new(1.0, Color32::DARK_GRAY));
         ui.painter().rect_filled(scrub_rect, 0.0, Color32::LIGHT_YELLOW);
         ui.painter().rect_stroke(left_drag_rect, 0.0, egui::Stroke::new(1.0, Color32::LIGHT_GRAY));
         ui.painter()
