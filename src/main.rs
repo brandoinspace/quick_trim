@@ -30,6 +30,7 @@ fn main() -> Result<(), eframe::Error> {
 
 // File picker based off of:
 // https://github.com/emilk/egui/blob/master/examples/file_dialog/src/main.rs
+#[derive(PartialEq)]
 struct QuickTrim {
     picked_path: Option<String>,
     start_trim: i32,
@@ -334,24 +335,9 @@ impl eframe::App for QuickTrim {
                                     ui.label(text);
                                 }
                             });
+                        ui.separator();
                         if ui.button("Close").clicked() {
-                            // There is probably a much better way to do this that I do not know of.
-                            self.picked_path = None;
-                            self.start_trim = 0;
-                            self.end_trim = 0;
-                            self.output_name = "output.mp4".to_owned();
-                            self.output_location = None;
-                            self.show_no_file_error = false;
-                            self.show_no_name_error = false;
-                            self.trim_can_continue = false;
-                            self.trim_finished = false;
-                            self.trim_to_end = false;
-                            self.overwrite = true;
-                            self.slow_trim = false;
-                            self.ffmpeg_gen_output_made = false;
-                            self.ffmpeg_gen_output = None;
-                            self.opened_using_open_with_windows = false;
-                            self.args = None;
+                            *self = Self::default();
                         }
                     });
             }
