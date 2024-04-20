@@ -12,23 +12,17 @@ use eframe::egui::{self, Color32};
 // - scroll with images to select time instead of inputting manually
 // - windows right click open with
 // - make end and start trim use u32
+// - settings window
 fn main() -> Result<(), eframe::Error> {
     env_logger::init();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_icon(
-                eframe::icon_data::from_png_bytes(&include_bytes!("../assets/icon.png")[..])
-                    .unwrap(),
-            )
+            .with_icon(eframe::icon_data::from_png_bytes(&include_bytes!("../assets/icon.png")[..]).unwrap())
             .with_inner_size([520.0, 440.0])
             .with_resizable(true),
         ..Default::default()
     };
-    eframe::run_native(
-        "Quick Trim",
-        options,
-        Box::new(|_cc| Box::<QuickTrim>::default()),
-    )
+    eframe::run_native("Quick Trim", options, Box::new(|_cc| Box::<QuickTrim>::default()))
 }
 
 // File picker based off of:
@@ -139,8 +133,7 @@ impl eframe::App for QuickTrim {
                                         .trim_end()
                                         .parse::<f32>()
                                         .unwrap()
-                                        .round()
-                                        as i32;
+                                        .round() as i32;
                                     self.start_trim = 0;
                                     self.video_length = self.end_trim as u32;
                                 }
@@ -204,11 +197,9 @@ impl eframe::App for QuickTrim {
                                         parts[0]
                                             .parse::<i32>()
                                             .and_then(|h| {
-                                                parts[1].parse::<i32>().and_then(|m| {
-                                                    parts[2].parse::<i32>().map(|s| {
-                                                        ((h * 60 * 60) + (m * 60) + s) as f64
-                                                    })
-                                                })
+                                                parts[1]
+                                                    .parse::<i32>()
+                                                    .and_then(|m| parts[2].parse::<i32>().map(|s| ((h * 60 * 60) + (m * 60) + s) as f64))
                                             })
                                             .ok()
                                     } else {
@@ -231,11 +222,9 @@ impl eframe::App for QuickTrim {
                                             parts[0]
                                                 .parse::<i32>()
                                                 .and_then(|h| {
-                                                    parts[1].parse::<i32>().and_then(|m| {
-                                                        parts[2].parse::<i32>().map(|s| {
-                                                            ((h * 60 * 60) + (m * 60) + s) as f64
-                                                        })
-                                                    })
+                                                    parts[1]
+                                                        .parse::<i32>()
+                                                        .and_then(|m| parts[2].parse::<i32>().map(|s| ((h * 60 * 60) + (m * 60) + s) as f64))
                                                 })
                                                 .ok()
                                         } else {
@@ -259,11 +248,7 @@ impl eframe::App for QuickTrim {
 
             ui.add_space(20.0);
 
-            ui.add(scrubber(
-                &mut self.start_trim,
-                &mut self.end_trim,
-                self.video_length,
-            ));
+            ui.add(scrubber(&mut self.start_trim, &mut self.end_trim, self.video_length));
 
             let mut args;
             if ui.button("Trim").clicked() {
@@ -282,14 +267,10 @@ impl eframe::App for QuickTrim {
                     let time_end = &num_to_time(self.end_trim);
                     let output = self.output_location.as_ref().unwrap();
                     if !self.slow_trim {
-                        args = vec![
-                            "-ss", time_start, "-to", time_end, "-i", path, "-c", "copy", output,
-                        ];
+                        args = vec!["-ss", time_start, "-to", time_end, "-i", path, "-c", "copy", output];
                     } else {
                         // TODO: make async
-                        args = vec![
-                            "-i", path, "-ss", time_start, "-t", time_end, "-async", "1", output,
-                        ];
+                        args = vec!["-i", path, "-ss", time_start, "-t", time_end, "-async", "1", output];
                     }
                     if self.overwrite {
                         args.push("-y");
@@ -303,14 +284,10 @@ impl eframe::App for QuickTrim {
                             args.remove(4);
                         }
                     }
-                    let cmd = Command::new("ffmpeg")
-                        .args(args)
-                        .output()
-                        .expect("Error when trimming video!");
+                    let cmd = Command::new("ffmpeg").args(args).output().expect("Error when trimming video!");
                     if !self.ffmpeg_gen_output_made {
                         self.ffmpeg_gen_output_made = true;
-                        self.ffmpeg_gen_output =
-                            Some(String::from_utf8_lossy(&cmd.stderr).into_owned());
+                        self.ffmpeg_gen_output = Some(String::from_utf8_lossy(&cmd.stderr).into_owned());
                     }
 
                     if cmd.status.success() {
@@ -320,33 +297,21 @@ impl eframe::App for QuickTrim {
             }
 
             if self.show_no_file_error {
-                egui::Window::new("Error!")
-                    .collapsible(false)
-                    .resizable(false)
-                    .show(ctx, |ui| {
-                        ui.colored_label(
-                            Color32::LIGHT_RED,
-                            "You need to provide a path to the video you want to trim!",
-                        );
-                        if ui.button("Ok").clicked() {
-                            self.show_no_file_error = false;
-                        }
-                    });
+                egui::Window::new("Error!").collapsible(false).resizable(false).show(ctx, |ui| {
+                    ui.colored_label(Color32::LIGHT_RED, "You need to provide a path to the video you want to trim!");
+                    if ui.button("Ok").clicked() {
+                        self.show_no_file_error = false;
+                    }
+                });
             }
 
             if self.show_no_name_error {
-                egui::Window::new("Error!")
-                    .collapsible(false)
-                    .resizable(false)
-                    .show(ctx, |ui| {
-                        ui.colored_label(
-                            Color32::LIGHT_RED,
-                            "You need to provide an output path for the trimmed video!",
-                        );
-                        if ui.button("Ok").clicked() {
-                            self.show_no_name_error = false;
-                        }
-                    });
+                egui::Window::new("Error!").collapsible(false).resizable(false).show(ctx, |ui| {
+                    ui.colored_label(Color32::LIGHT_RED, "You need to provide an output path for the trimmed video!");
+                    if ui.button("Ok").clicked() {
+                        self.show_no_name_error = false;
+                    }
+                });
             }
 
             if self.trim_finished {
@@ -357,14 +322,11 @@ impl eframe::App for QuickTrim {
                     .constrain(false)
                     .show(ctx, |ui| {
                         ui.heading("Trim Complete!");
-                        egui::ScrollArea::vertical()
-                            .max_height(200.0)
-                            .stick_to_bottom(true)
-                            .show(ui, |ui| {
-                                if let Some(text) = &self.ffmpeg_gen_output {
-                                    ui.label(text);
-                                }
-                            });
+                        egui::ScrollArea::vertical().max_height(200.0).stick_to_bottom(true).show(ui, |ui| {
+                            if let Some(text) = &self.ffmpeg_gen_output {
+                                ui.label(text);
+                            }
+                        });
                         ui.separator();
                         if ui.button("Close").clicked() {
                             *self = Self::default();
@@ -384,32 +346,20 @@ fn num_to_time(n: i32) -> String {
 
 // custom scrubber widget
 
-pub fn scroll_scrubber(
-    ui: &mut egui::Ui,
-    start: &mut i32,
-    end: &mut i32,
-    video_length: u32,
-) -> egui::Response {
+pub fn scroll_scrubber(ui: &mut egui::Ui, start: &mut i32, end: &mut i32, video_length: u32) -> egui::Response {
     let scrub_size = egui::vec2(360.0, 36.0);
     let drag_size = egui::vec2(360.0, 12.0);
 
     let (rect, response) = ui.allocate_exact_size(scrub_size, egui::Sense::hover());
-    let (left_drag_rect, mut left_response) =
-        ui.allocate_exact_size(drag_size, egui::Sense::drag());
-    let (right_drag_rect, mut right_response) =
-        ui.allocate_exact_size(drag_size, egui::Sense::drag());
+    let (left_drag_rect, mut left_response) = ui.allocate_exact_size(drag_size, egui::Sense::drag());
+    let (right_drag_rect, mut right_response) = ui.allocate_exact_size(drag_size, egui::Sense::drag());
 
     let size = ui.spacing().interact_size.y * egui::vec2(0.5, 0.7);
-    let mut left_drag_scrub_rect = egui::Rect::from_center_size(
-        egui::pos2(rect.left() + (size.x / 2.0), left_drag_rect.center().y),
-        size,
-    );
-    let mut right_drag_scrub_rect = egui::Rect::from_center_size(
-        egui::pos2(rect.right() - (size.x / 2.0), right_drag_rect.center().y),
-        size,
-    );
+    let mut left_drag_scrub_rect = egui::Rect::from_center_size(egui::pos2(rect.left() + (size.x / 2.0), left_drag_rect.center().y), size);
+    let mut right_drag_scrub_rect = egui::Rect::from_center_size(egui::pos2(rect.right() - (size.x / 2.0), right_drag_rect.center().y), size);
 
-    ui.painter().rect_filled(rect, 0.0, Color32::DARK_GRAY);
+    ui.painter()
+        .rect(rect, 0.0, Color32::DARK_GRAY, egui::Stroke::new(1.0, Color32::DARK_GRAY));
 
     if left_response.dragged() {
         if left_response.drag_delta().x > 0.0 {
@@ -468,31 +418,17 @@ pub fn scroll_scrubber(
     }
 
     if ui.is_rect_visible(rect) {
+        ui.painter().rect_filled(scrub_rect, 0.0, Color32::LIGHT_YELLOW);
+        ui.painter().rect_stroke(left_drag_rect, 0.0, egui::Stroke::new(1.0, Color32::LIGHT_GRAY));
         ui.painter()
-            .rect_filled(scrub_rect, 0.0, Color32::LIGHT_YELLOW);
-        ui.painter().rect_stroke(
-            left_drag_rect,
-            0.0,
-            egui::Stroke::new(1.0, Color32::LIGHT_GRAY),
-        );
-        ui.painter().rect_stroke(
-            right_drag_rect,
-            0.0,
-            egui::Stroke::new(1.0, Color32::LIGHT_GRAY),
-        );
-        ui.painter()
-            .rect_filled(left_drag_scrub_rect, 0.0, Color32::WHITE);
-        ui.painter()
-            .rect_filled(right_drag_scrub_rect, 0.0, Color32::WHITE);
+            .rect_stroke(right_drag_rect, 0.0, egui::Stroke::new(1.0, Color32::LIGHT_GRAY));
+        ui.painter().rect_filled(left_drag_scrub_rect, 0.0, Color32::WHITE);
+        ui.painter().rect_filled(right_drag_scrub_rect, 0.0, Color32::WHITE);
     }
 
     response
 }
 
-pub fn scrubber<'a>(
-    start: &'a mut i32,
-    end: &'a mut i32,
-    video_length: u32,
-) -> impl egui::Widget + 'a {
+pub fn scrubber<'a>(start: &'a mut i32, end: &'a mut i32, video_length: u32) -> impl egui::Widget + 'a {
     move |ui: &mut egui::Ui| scroll_scrubber(ui, start, end, video_length)
 }
