@@ -38,6 +38,7 @@ struct QuickTrim {
     picked_path: Option<String>,
     start_trim: i32,
     end_trim: i32,
+    video_length: u32,
     output_name: String,
     output_location: Option<String>,
     show_no_file_error: bool,
@@ -59,6 +60,7 @@ impl Default for QuickTrim {
             picked_path: None,
             start_trim: 0,
             end_trim: 0,
+            video_length: 0,
             output_name: "output.mp4".to_owned(),
             output_location: None,
             show_no_file_error: false,
@@ -139,6 +141,8 @@ impl eframe::App for QuickTrim {
                                         .unwrap()
                                         .round()
                                         as i32;
+                                    self.start_trim = 0;
+                                    self.video_length = self.end_trim as u32;
                                 }
                             }
                             if let Some(picked_path) = &self.picked_path {
@@ -255,7 +259,11 @@ impl eframe::App for QuickTrim {
 
             ui.add_space(20.0);
 
-            ui.add(scrubber(&mut self.start_trim, &mut self.end_trim));
+            ui.add(scrubber(
+                &mut self.start_trim,
+                &mut self.end_trim,
+                self.video_length,
+            ));
 
             let mut args;
             if ui.button("Trim").clicked() {
@@ -376,20 +384,30 @@ fn num_to_time(n: i32) -> String {
 
 // custom scrubber widget
 
-pub fn scroll_scrubber(ui: &mut egui::Ui, start: &mut i32, end: &mut i32) -> egui::Response {
-    let scrub_size = ui.spacing().interact_size.y * egui::vec2(20.0, 2.0);
-    let left_scrub_size = ui.spacing().interact_size.y * egui::vec2(0.5, 1.0);
-    let right_scrub_size = ui.spacing().interact_size.y * egui::vec2(0.5, 1.0);
+pub fn scroll_scrubber(
+    ui: &mut egui::Ui,
+    start: &mut i32,
+    end: &mut i32,
+    video_length: u32,
+) -> egui::Response {
+    let scrub_size = egui::vec2(360.0, 36.0);
+    let drag_size = egui::vec2(360.0, 12.0);
 
     let (rect, response) = ui.allocate_exact_size(scrub_size, egui::Sense::hover());
-    let (mut left_rect, mut left_response) =
-        ui.allocate_exact_size(left_scrub_size, egui::Sense::drag());
-    let (mut right_rect, mut right_response) =
-        ui.allocate_exact_size(right_scrub_size, egui::Sense::drag());
-    right_rect.set_center(egui::pos2(
-        rect.right() - right_rect.center().x,
-        right_rect.center().y,
-    ));
+    let (left_drag_rect, mut left_response) =
+        ui.allocate_exact_size(drag_size, egui::Sense::drag());
+    let (right_drag_rect, mut right_response) =
+        ui.allocate_exact_size(drag_size, egui::Sense::drag());
+
+    let size = ui.spacing().interact_size.y * egui::vec2(0.5, 0.7);
+    let mut left_drag_scrub_rect = egui::Rect::from_center_size(
+        egui::pos2(rect.left() + (size.x / 2.0), left_drag_rect.center().y),
+        size,
+    );
+    let mut right_drag_scrub_rect = egui::Rect::from_center_size(
+        egui::pos2(rect.right() - (size.x / 2.0), right_drag_rect.center().y),
+        size,
+    );
 
     ui.painter().rect_filled(rect, 0.0, Color32::DARK_GRAY);
 
@@ -413,34 +431,68 @@ pub fn scroll_scrubber(ui: &mut egui::Ui, start: &mut i32, end: &mut i32) -> egu
         right_response.mark_changed();
     }
 
+    if *start < 0 {
+        *start = 0;
+    }
+    if *start > video_length as i32 {
+        *start = video_length as i32 - 1;
+    }
+    // TODO: right scrubber does not move anymore
+    if *end > video_length as i32 {
+        *end = video_length as i32;
+    }
+    if *end < 0 {
+        *end = 1;
+    }
+
     let mut scrub_rect = rect;
-    if *start < rect.left() as i32 {
-        // use center instead ?
-        scrub_rect.set_left(rect.left());
-        left_rect.set_left(rect.left());
+
+    scrub_rect.set_left(*start as f32);
+    scrub_rect.set_right(*end as f32);
+
+    left_drag_scrub_rect.set_center(left_drag_scrub_rect.center() + egui::vec2(*start as f32, 0.0));
+    right_drag_scrub_rect.set_center(right_drag_scrub_rect.center() + egui::vec2(*end as f32, 0.0));
+
+    // clamping
+    if left_drag_scrub_rect.left() < left_drag_rect.left() {
+        left_drag_scrub_rect.set_center(egui::pos2(
+            left_drag_scrub_rect.center().x + left_drag_rect.left(),
+            left_drag_scrub_rect.center().y,
+        ));
     }
-    if *end > rect.right() as i32 {
-        scrub_rect.set_right(rect.right());
-        right_rect.set_right(rect.right());
+    if right_drag_scrub_rect.right() >= right_drag_rect.right() {
+        right_drag_scrub_rect.set_center(egui::pos2(
+            right_drag_rect.right() - (right_drag_scrub_rect.width() / 2.0),
+            right_drag_scrub_rect.center().y,
+        ));
     }
-    if *start >= rect.left() as i32 || *end <= rect.right() as i32 {
-        scrub_rect.set_left(*start as f32);
-        scrub_rect.set_right(*end as f32);
-        left_rect.set_center(left_rect.center() + egui::vec2(*start as f32, 0.0));
-        right_rect.set_center(right_rect.center() + egui::vec2(*end as f32, 0.0));
-    }
+
     if ui.is_rect_visible(rect) {
         ui.painter()
             .rect_filled(scrub_rect, 0.0, Color32::LIGHT_YELLOW);
+        ui.painter().rect_stroke(
+            left_drag_rect,
+            0.0,
+            egui::Stroke::new(1.0, Color32::LIGHT_GRAY),
+        );
+        ui.painter().rect_stroke(
+            right_drag_rect,
+            0.0,
+            egui::Stroke::new(1.0, Color32::LIGHT_GRAY),
+        );
         ui.painter()
-            .rect_stroke(left_rect, 0.0, egui::Stroke::new(2.0, Color32::WHITE));
+            .rect_filled(left_drag_scrub_rect, 0.0, Color32::WHITE);
         ui.painter()
-            .rect_stroke(right_rect, 0.0, egui::Stroke::new(2.0, Color32::WHITE));
+            .rect_filled(right_drag_scrub_rect, 0.0, Color32::WHITE);
     }
 
     response
 }
 
-pub fn scrubber<'a>(start: &'a mut i32, end: &'a mut i32) -> impl egui::Widget + 'a {
-    move |ui: &mut egui::Ui| scroll_scrubber(ui, start, end)
+pub fn scrubber<'a>(
+    start: &'a mut i32,
+    end: &'a mut i32,
+    video_length: u32,
+) -> impl egui::Widget + 'a {
+    move |ui: &mut egui::Ui| scroll_scrubber(ui, start, end, video_length)
 }
