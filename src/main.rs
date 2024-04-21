@@ -6,7 +6,8 @@ use std::{
     process::{Command, Stdio},
 };
 
-use eframe::egui::{self, Color32, ColorImage};
+use eframe::egui::{self, Align2, Color32, ColorImage};
+use egui_toast::Toasts;
 
 // https://stackoverflow.com/a/75292572
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -261,14 +262,29 @@ impl eframe::App for QuickTrim {
                 ),
             );
 
+            let mut toasts = Toasts::new()
+                .anchor(Align2::RIGHT_BOTTOM, (-10.0, -10.0))
+                .direction(egui::Direction::BottomUp);
+
             let mut args;
             if ui.button("Trim").clicked() {
                 ctx.set_cursor_icon(egui::CursorIcon::Progress);
                 if self.picked_path.is_none() {
-                    self.show_no_file_error = true;
-                } else if self.output_location.is_none() {
-                    self.show_no_name_error = true;
-                } else {
+                    toasts.add(egui_toast::Toast {
+                        text: "You need to provide the path to the video you want to trim!".into(),
+                        kind: egui_toast::ToastKind::Error,
+                        options: egui_toast::ToastOptions::default().duration_in_seconds(4.0).show_progress(true),
+                    });
+                }
+                if self.output_location.is_none() {
+                    toasts.add(egui_toast::Toast {
+                        text: "You need to provide the path to the output file!".into(),
+                        kind: egui_toast::ToastKind::Error,
+                        options: egui_toast::ToastOptions::default().duration_in_seconds(4.0).show_progress(true),
+                    });
+                }
+                // Having these as separate "if" statements lets multiple toasts appear.
+                if self.picked_path.is_some() && self.output_location.is_some() {
                     self.trim_can_continue = true;
                 }
 
@@ -307,23 +323,7 @@ impl eframe::App for QuickTrim {
                 }
             }
 
-            if self.show_no_file_error {
-                egui::Window::new("Error!").collapsible(false).resizable(false).show(ctx, |ui| {
-                    ui.colored_label(Color32::LIGHT_RED, "You need to provide a path to the video you want to trim!");
-                    if ui.button("Ok").clicked() {
-                        self.show_no_file_error = false;
-                    }
-                });
-            }
-
-            if self.show_no_name_error {
-                egui::Window::new("Error!").collapsible(false).resizable(false).show(ctx, |ui| {
-                    ui.colored_label(Color32::LIGHT_RED, "You need to provide an output path for the trimmed video!");
-                    if ui.button("Ok").clicked() {
-                        self.show_no_name_error = false;
-                    }
-                });
-            }
+            toasts.show(ctx);
 
             if self.trim_finished {
                 egui::Window::new("Output")

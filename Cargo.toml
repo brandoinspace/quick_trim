@@ -18,5 +18,6 @@ rfd = "0.14.1"
 
 egui_extras = { version = "0.27.2", features = ["all_loaders"] }
 image = { version = "0.25.1", features = ["png"] }
+egui-toast = "0.13.0"
 # Computer\HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.mp4\OpenWithList
 # windows-registry = "0.1.1"
