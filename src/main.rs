@@ -14,7 +14,6 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 // TODO:
 // - make async
 // - windows right click open with
-// - millisecond percision
 // - settings window
 // - scrubbers on same y
 // - scroll values don't scroll properly
