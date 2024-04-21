@@ -13,7 +13,6 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 // TODO:
 // - make async
-// - scroll with images to select time instead of inputting manually
 // - windows right click open with
 // - millisecond percision
 // - settings window
