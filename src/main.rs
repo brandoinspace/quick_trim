@@ -364,6 +364,7 @@ pub fn scroll_scrubber(ui: &mut egui::Ui, start: &mut f32, end: &mut f32, video_
     let mut left_drag_scrub_rect = egui::Rect::from_center_size(egui::pos2(rect.left() + half_width, left_drag_rect.center().y), size);
     let mut right_drag_scrub_rect = egui::Rect::from_center_size(egui::pos2(rect.right() - half_width, right_drag_rect.center().y), size);
 
+    left_response = left_response.on_hover_and_drag_cursor(egui::CursorIcon::ResizeHorizontal);
     if left_response.dragged() {
         if left_response.drag_delta().x > 0.0 {
             *start += trim_step * left_response.drag_delta().x;
@@ -374,6 +375,7 @@ pub fn scroll_scrubber(ui: &mut egui::Ui, start: &mut f32, end: &mut f32, video_
         left_response.mark_changed();
     }
 
+    right_response = right_response.on_hover_and_drag_cursor(egui::CursorIcon::ResizeHorizontal);
     if right_response.dragged() && !to_end {
         if right_response.drag_delta().x > 0.0 {
             *end += trim_step * right_response.drag_delta().x;
