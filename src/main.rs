@@ -13,6 +13,7 @@ use eframe::egui::{self, Color32};
 // - windows right click open with
 // - millisecond percision
 // - settings window
+// - scrubbers on same y
 fn main() -> Result<(), eframe::Error> {
     env_logger::init();
     let options = eframe::NativeOptions {
@@ -188,7 +189,7 @@ impl eframe::App for QuickTrim {
                         ui.add(
                             egui::DragValue::new(&mut self.start_trim)
                                 .clamp_range(0.0..=end_trim_clone)
-                                .custom_formatter(|n, _| num_to_time(n as i32))
+                                .custom_formatter(|n, _| num_to_time(n as f32))
                                 .custom_parser(|s| {
                                     let parts: Vec<&str> = s.split(':').collect();
                                     if parts.len() == 3 {
@@ -213,7 +214,7 @@ impl eframe::App for QuickTrim {
                                 !self.trim_to_end,
                                 egui::DragValue::new(&mut self.end_trim)
                                     .clamp_range(0.0..=end_trim_clone)
-                                    .custom_formatter(|n, _| num_to_time(n as i32))
+                                    .custom_formatter(|n, _| num_to_time(n as f32))
                                     .custom_parser(|s| {
                                         let parts: Vec<&str> = s.split(':').collect();
                                         if parts.len() == 3 {
@@ -264,8 +265,8 @@ impl eframe::App for QuickTrim {
 
                 if self.trim_can_continue {
                     let path = self.picked_path.as_ref().unwrap();
-                    let time_start = &num_to_time(self.start_trim as i32);
-                    let time_end = &num_to_time(self.end_trim as i32);
+                    let time_start = &num_to_time(self.start_trim as f32);
+                    let time_end = &num_to_time(self.end_trim as f32);
                     let output = self.output_location.as_ref().unwrap();
                     if !self.slow_trim {
                         args = vec!["-ss", time_start, "-to", time_end, "-i", path, "-c", "copy", output];
@@ -338,11 +339,12 @@ impl eframe::App for QuickTrim {
     }
 }
 
-fn num_to_time(n: i32) -> String {
-    let hours = n / (60 * 60);
-    let mins = (n / 60) % 60;
-    let secs = n % 60;
-    format!("{hours:02}:{mins:02}:{secs:02}")
+fn num_to_time(n: f32) -> String {
+    let hours = n as i32 / (60 * 60);
+    let mins = (n as i32 / 60) % 60;
+    let secs = n % 60.0;
+    // add setting for millisecond precision?
+    format!("{hours:02}:{mins:02}:{secs:02.2}")
 }
 
 // custom scrubber widget
