@@ -18,6 +18,7 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 // - millisecond percision
 // - settings window
 // - scrubbers on same y
+// - scroll values don't scroll properly
 fn main() -> Result<(), eframe::Error> {
     env_logger::init();
     let options = eframe::NativeOptions {
