@@ -5,7 +5,7 @@ use std::{
     process::{Command, Stdio},
 };
 
-use eframe::egui::{self, Color32};
+use eframe::egui::{self, Color32, ColorImage};
 
 // TODO:
 // - make async
@@ -19,11 +19,18 @@ fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_icon(eframe::icon_data::from_png_bytes(&include_bytes!("../assets/icon.png")[..]).unwrap())
-            .with_inner_size([520.0, 440.0])
-            .with_resizable(true),
+            .with_inner_size([656.0, 440.0])
+            .with_resizable(false),
         ..Default::default()
     };
-    eframe::run_native("Quick Trim", options, Box::new(|_cc| Box::<QuickTrim>::default()))
+    eframe::run_native(
+        "Quick Trim",
+        options,
+        Box::new(|cc| {
+            egui_extras::install_image_loaders(&cc.egui_ctx);
+            Box::<QuickTrim>::default()
+        }),
+    )
 }
 
 // File picker based off of:
@@ -48,6 +55,9 @@ struct QuickTrim {
     ffmpeg_gen_output: Option<String>,
     opened_using_open_with_windows: bool,
     args: Option<Vec<String>>,
+    preview_has_loaded: bool,
+    preview_image_start_handle: Option<egui::TextureHandle>,
+    preview_image_end_handle: Option<egui::TextureHandle>,
 }
 
 impl Default for QuickTrim {
@@ -71,6 +81,9 @@ impl Default for QuickTrim {
             ffmpeg_gen_output: None,
             opened_using_open_with_windows: false,
             args: None,
+            preview_has_loaded: false,
+            preview_image_start_handle: None,
+            preview_image_end_handle: None,
         }
     }
 }
@@ -104,7 +117,7 @@ impl eframe::App for QuickTrim {
                 egui::Grid::new("Options")
                     .num_columns(2)
                     .spacing([20.0, 10.0])
-                    .min_col_width(ui.available_width() / 4.0)
+                    .min_col_width(ui.available_width() / 2.0)
                     .striped(true)
                     .show(ui, |ui| {
                         ui.label("File");
@@ -135,32 +148,15 @@ impl eframe::App for QuickTrim {
                                     self.start_trim = 0.0;
                                     self.video_length = self.end_trim as u32;
                                     self.scrubber_is_visible = true;
+                                    let image_data_start = get_video_frame(&self.picked_path.as_ref().unwrap(), &num_to_time(self.start_trim));
+                                    self.preview_image_start_handle =
+                                        Some(ui.ctx().load_texture("preview_start", image_data_start, Default::default()));
+                                    let image_data_end = get_video_frame(&self.picked_path.as_ref().unwrap(), &num_to_time(self.end_trim));
+                                    self.preview_image_end_handle = Some(ui.ctx().load_texture("preview_start", image_data_end, Default::default()));
                                 }
                             }
                             if let Some(picked_path) = &self.picked_path {
-                                ui.label(format!("({picked_path})"));
-                                // let args = [
-                                //     "-i",
-                                //     self.picked_path.as_ref().unwrap(),
-                                //     "-ss",
-                                //     "00:00:00",
-                                //     "-s",
-                                //     "650x390",
-                                //     "-vframes",
-                                //     "1",
-                                //     "-c:v",
-                                //     "png",
-                                //     "-f",
-                                //     "image2pipe",
-                                //     "pipe:1",
-                                // ];
-                                // let f = Command::new("ffmpeg")
-                                //     .args(args)
-                                //     .output()
-                                //     .expect("Could not get image frame!");
-                                // std::fs::write(&)
-                                // cmd_frame = Some(f);
-                                // let frame = cmd_frame.stdin.unwrap().re;
+                                ui.add(egui::Label::new(format!("({picked_path})")).truncate(true));
                             }
                         });
                         ui.end_row();
@@ -178,7 +174,7 @@ impl eframe::App for QuickTrim {
                                 }
                             }
                             if let Some(path) = &self.output_location {
-                                ui.label(format!("({path})"));
+                                ui.add(egui::Label::new(format!("({path})")).truncate(true));
                             }
                         });
                         ui.end_row();
@@ -245,11 +241,20 @@ impl eframe::App for QuickTrim {
                     });
             });
 
-            ui.add_space(20.0);
+            ui.add_space(10.0);
 
             ui.add_visible(
                 self.scrubber_is_visible,
-                scrubber(&mut self.start_trim, &mut self.end_trim, self.video_length, self.trim_to_end),
+                scrubber(
+                    &mut self.start_trim,
+                    &mut self.end_trim,
+                    self.video_length,
+                    self.trim_to_end,
+                    self.picked_path.clone(),
+                    &mut self.preview_has_loaded,
+                    &mut self.preview_image_start_handle,
+                    &mut self.preview_image_end_handle,
+                ),
             );
 
             let mut args;
@@ -349,15 +354,41 @@ fn num_to_time(n: f32) -> String {
 
 // custom scrubber widget
 
-pub fn scroll_scrubber(ui: &mut egui::Ui, start: &mut f32, end: &mut f32, video_length: u32, to_end: bool) -> egui::Response {
-    let scrub_size = egui::vec2(360.0, 36.0);
-    let drag_size = egui::vec2(360.0, 20.0);
+pub fn scroll_scrubber(
+    ui: &mut egui::Ui,
+    start: &mut f32,
+    end: &mut f32,
+    video_length: u32,
+    to_end: bool,
+    source_path: Option<String>,
+    preview_loaded: &mut bool,
+    preview_image_start: &mut Option<egui::TextureHandle>,
+    preview_image_end: &mut Option<egui::TextureHandle>,
+) -> egui::Response {
+    let preview_size = egui::vec2(213.0, 120.0);
+    let (preview_rect, _) = ui.allocate_exact_size(preview_size, egui::Sense::focusable_noninteractive());
+    let mut start_was_updated = false;
+    let mut end_was_updated = false;
 
-    let trim_step = video_length as f32 / 380.0;
+    ui.add_space(5.0);
+
+    let scrub_size = egui::vec2(640.0, 36.0);
+    let drag_size = egui::vec2(640.0, 20.0);
+
+    let trim_step = video_length as f32 / 660.0;
 
     let (rect, response) = ui.allocate_exact_size(scrub_size, egui::Sense::focusable_noninteractive());
     let (left_drag_rect, mut left_response) = ui.allocate_exact_size(drag_size, egui::Sense::drag());
     let (right_drag_rect, mut right_response) = ui.allocate_exact_size(drag_size, egui::Sense::drag());
+
+    let preview_rect_start = egui::Rect::from_center_size(
+        egui::pos2(rect.center().x - (preview_size.x / 2.0) - 5.0, preview_rect.center().y),
+        preview_size,
+    );
+    let preview_rect_end = egui::Rect::from_center_size(
+        egui::pos2(rect.center().x + (preview_size.x / 2.0) + 5.0, preview_rect.center().y),
+        preview_size,
+    );
 
     let size = egui::vec2(10.0, 20.0);
     let half_width = size.x / 2.0;
@@ -366,6 +397,7 @@ pub fn scroll_scrubber(ui: &mut egui::Ui, start: &mut f32, end: &mut f32, video_
 
     left_response = left_response.on_hover_and_drag_cursor(egui::CursorIcon::ResizeHorizontal);
     if left_response.dragged() {
+        *preview_loaded = false;
         if left_response.drag_delta().x > 0.0 {
             *start += trim_step * left_response.drag_delta().x;
         }
@@ -374,9 +406,13 @@ pub fn scroll_scrubber(ui: &mut egui::Ui, start: &mut f32, end: &mut f32, video_
         }
         left_response.mark_changed();
     }
+    if left_response.drag_stopped() {
+        start_was_updated = true;
+    }
 
     right_response = right_response.on_hover_and_drag_cursor(egui::CursorIcon::ResizeHorizontal);
     if right_response.dragged() && !to_end {
+        *preview_loaded = false;
         if right_response.drag_delta().x > 0.0 {
             *end += trim_step * right_response.drag_delta().x;
         }
@@ -384,6 +420,9 @@ pub fn scroll_scrubber(ui: &mut egui::Ui, start: &mut f32, end: &mut f32, video_
             *end -= f32::abs(trim_step * right_response.drag_delta().x);
         }
         right_response.mark_changed();
+    }
+    if right_response.drag_stopped() {
+        end_was_updated = true;
     }
 
     if *start < 0.0 {
@@ -437,6 +476,23 @@ pub fn scroll_scrubber(ui: &mut egui::Ui, start: &mut f32, end: &mut f32, video_
     }
 
     if ui.is_rect_visible(rect) {
+        if (start_was_updated || end_was_updated) && !*preview_loaded {
+            if let Some(path) = source_path {
+                let image_data = get_video_frame(&path, &num_to_time(if start_was_updated { *start } else { *end }));
+                if start_was_updated {
+                    *preview_image_start = Some(ui.ctx().load_texture("preview_start", image_data, Default::default()));
+                } else {
+                    *preview_image_end = Some(ui.ctx().load_texture("preview_start", image_data, Default::default()));
+                }
+                *preview_loaded = true;
+            }
+        }
+        if let Some(data) = preview_image_start {
+            egui::Image::new((data.id(), data.size_vec2())).paint_at(ui, preview_rect_start);
+        }
+        if let Some(data) = preview_image_end {
+            egui::Image::new((data.id(), data.size_vec2())).paint_at(ui, preview_rect_end);
+        }
         ui.painter()
             .rect(rect, 0.0, Color32::DARK_GRAY, egui::Stroke::new(1.0, Color32::DARK_GRAY));
         ui.painter().rect_filled(scrub_rect, 0.0, Color32::LIGHT_YELLOW);
@@ -450,6 +506,56 @@ pub fn scroll_scrubber(ui: &mut egui::Ui, start: &mut f32, end: &mut f32, video_
     response
 }
 
-pub fn scrubber<'a>(start: &'a mut f32, end: &'a mut f32, video_length: u32, to_end: bool) -> impl egui::Widget + 'a {
-    move |ui: &mut egui::Ui| scroll_scrubber(ui, start, end, video_length, to_end)
+pub fn scrubber<'a>(
+    start: &'a mut f32,
+    end: &'a mut f32,
+    video_length: u32,
+    to_end: bool,
+    source_path: Option<String>,
+    preview_loaded: &'a mut bool,
+    preview_image_start: &'a mut Option<egui::TextureHandle>,
+    preview_image_end: &'a mut Option<egui::TextureHandle>,
+) -> impl egui::Widget + 'a {
+    move |ui: &mut egui::Ui| {
+        scroll_scrubber(
+            ui,
+            start,
+            end,
+            video_length,
+            to_end,
+            source_path,
+            preview_loaded,
+            preview_image_start,
+            preview_image_end,
+        )
+    }
+}
+
+// From https://docs.rs/egui/0.27.2/egui/struct.ColorImage.html#method.from_rgba_unmultiplied
+fn load_image_from_memory(image_data: &[u8]) -> Result<ColorImage, image::ImageError> {
+    let image = image::load_from_memory(image_data)?;
+    let size = [image.width() as _, image.height() as _];
+    let image_buffer = image.to_rgba8();
+    let pixels = image_buffer.as_flat_samples();
+    Ok(ColorImage::from_rgba_unmultiplied(size, pixels.as_slice()))
+}
+
+fn get_video_frame(path: &str, time: &str) -> ColorImage {
+    let args = [
+        "-i",
+        path,
+        "-ss",
+        time,
+        "-s",
+        "213x120",
+        "-vframes",
+        "1",
+        "-c:v",
+        "png",
+        "-f",
+        "image2pipe",
+        "pipe:1",
+    ];
+    let f = Command::new("ffmpeg").args(args).output().expect("Could not get image frame!");
+    load_image_from_memory(&f.stdout).expect("Could not load preview image!")
 }
