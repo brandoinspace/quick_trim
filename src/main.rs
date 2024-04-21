@@ -12,7 +12,7 @@ use eframe::egui::{self, Color32, ColorImage};
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 // TODO:
-// - make async
+// - make multithreaded
 // - windows right click open with
 // - settings window
 // - scrubbers on same y
