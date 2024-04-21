@@ -2,10 +2,14 @@
 
 use std::{
     env,
+    os::windows::process::CommandExt,
     process::{Command, Stdio},
 };
 
 use eframe::egui::{self, Color32, ColorImage};
+
+// https://stackoverflow.com/a/75292572
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 // TODO:
 // - make async
@@ -130,6 +134,7 @@ impl eframe::App for QuickTrim {
                                 {
                                     self.picked_path = Some(path.display().to_string());
                                     let cmd = Command::new("ffprobe")
+                                        .creation_flags(CREATE_NO_WINDOW)
                                         .args([
                                             "-v",
                                             "error",
@@ -556,6 +561,10 @@ fn get_video_frame(path: &str, time: &str) -> ColorImage {
         "image2pipe",
         "pipe:1",
     ];
-    let f = Command::new("ffmpeg").args(args).output().expect("Could not get image frame!");
+    let f = Command::new("ffmpeg")
+        .creation_flags(CREATE_NO_WINDOW)
+        .args(args)
+        .output()
+        .expect("Could not get image frame!");
     load_image_from_memory(&f.stdout).expect("Could not load preview image!")
 }
