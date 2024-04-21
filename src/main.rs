@@ -500,9 +500,10 @@ pub fn scroll_scrubber(
         ui.painter()
             .rect(rect, 0.0, Color32::DARK_GRAY, egui::Stroke::new(1.0, Color32::DARK_GRAY));
         ui.painter().rect_filled(scrub_rect, 0.0, Color32::LIGHT_YELLOW);
-        ui.painter().rect_stroke(left_drag_rect, 0.0, egui::Stroke::new(1.0, Color32::LIGHT_GRAY));
         ui.painter()
-            .rect_stroke(right_drag_rect, 0.0, egui::Stroke::new(1.0, Color32::LIGHT_GRAY));
+            .rect_stroke(left_drag_rect, 0.0, egui::Stroke::new(1.0, Color32::from_hex("#7b7b7b").unwrap()));
+        ui.painter()
+            .rect_stroke(right_drag_rect, 0.0, egui::Stroke::new(1.0, Color32::from_hex("#7b7b7b").unwrap()));
         ui.painter().rect_filled(left_drag_scrub_rect, 0.0, Color32::WHITE);
         ui.painter().rect_filled(right_drag_scrub_rect, 0.0, Color32::WHITE);
     }
