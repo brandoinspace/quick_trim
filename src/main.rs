@@ -17,7 +17,6 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 // - windows right click open with
 // - settings window
 // - scrubbers on same y
-// - scroll values don't scroll properly
 fn main() -> Result<(), eframe::Error> {
     env_logger::init();
     let options = eframe::NativeOptions {
@@ -182,10 +181,9 @@ impl eframe::App for QuickTrim {
 
                         ui.label("Start Trim");
                         // From https://docs.rs/egui/latest/egui/widgets/struct.DragValue.html#method.custom_formatter
-                        let end_trim_clone = self.end_trim;
                         ui.add(
                             egui::DragValue::new(&mut self.start_trim)
-                                .clamp_range(0.0..=end_trim_clone)
+                                .clamp_range(0.0..=self.video_length as f32)
                                 .custom_formatter(|n, _| num_to_time(n as f32))
                                 .custom_parser(|s| {
                                     let parts: Vec<&str> = s.split(':').collect();
@@ -210,7 +208,7 @@ impl eframe::App for QuickTrim {
                             ui.add_enabled(
                                 !self.trim_to_end,
                                 egui::DragValue::new(&mut self.end_trim)
-                                    .clamp_range(0.0..=end_trim_clone)
+                                    .clamp_range(0.0..=self.video_length as f32)
                                     .custom_formatter(|n, _| num_to_time(n as f32))
                                     .custom_parser(|s| {
                                         let parts: Vec<&str> = s.split(':').collect();
