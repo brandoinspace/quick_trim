@@ -13,6 +13,7 @@ use egui_toast::Toasts;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 // TODO:
+// - inputting custom value into value slider does not work
 // - make multithreaded
 // - windows right click open with
 // - settings window
