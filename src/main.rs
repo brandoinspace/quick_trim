@@ -554,11 +554,13 @@ fn load_image_from_memory(image_data: &[u8]) -> Result<ColorImage, image::ImageE
 }
 
 fn get_video_frame(path: &str, time: &str) -> ColorImage {
+    let p = String::from(path);
+    let t = String::from(time);
     let args = [
-        "-i",
-        path,
         "-ss",
-        time,
+        &t,
+        "-i",
+        &p,
         "-s",
         "213x120",
         "-vframes",
