@@ -38,7 +38,6 @@ fn main() -> Result<(), eframe::Error> {
 
 // File picker based off of:
 // https://github.com/emilk/egui/blob/master/examples/file_dialog/src/main.rs
-#[derive(PartialEq)]
 struct QuickTrim {
     picked_path: Option<String>,
     start_trim: f32,
@@ -59,6 +58,7 @@ struct QuickTrim {
     preview_has_loaded: bool,
     preview_image_start_handle: Option<egui::TextureHandle>,
     preview_image_end_handle: Option<egui::TextureHandle>,
+    keep_existing_trim_data: bool,
 }
 
 impl Default for QuickTrim {
@@ -83,6 +83,7 @@ impl Default for QuickTrim {
             preview_has_loaded: false,
             preview_image_start_handle: None,
             preview_image_end_handle: None,
+            keep_existing_trim_data: false,
         }
     }
 }
@@ -234,7 +235,7 @@ impl eframe::App for QuickTrim {
                         ui.horizontal(|ui| {
                             // maybe just check if file exists at output path and if so, add this automatically?
                             ui.checkbox(&mut self.overwrite, "Overwrite Existing");
-                            ui.checkbox(&mut self.slow_trim, "Slow Trim (Blocking)");
+                            ui.checkbox(&mut self.slow_trim, "Slow Trim (Blocking)").on_hover_text("Sometimes trimming using the fast setting (default) can cause the video to have weird artifacts. If the video has a lot of artifacts/glitches/blobs, try turning this setting on. This is a slow process and will freeze the window until complete.");
                         });
                         ui.end_row();
                     });
@@ -259,63 +260,67 @@ impl eframe::App for QuickTrim {
             let mut toasts = Toasts::new()
                 .anchor(Align2::RIGHT_BOTTOM, (-10.0, -10.0))
                 .direction(egui::Direction::BottomUp);
-
-            let mut args;
-            if ui.button("Trim").clicked() {
-                ctx.set_cursor_icon(egui::CursorIcon::Progress);
-                if self.picked_path.is_none() {
-                    toasts.add(egui_toast::Toast {
-                        text: "You need to provide the path to the video you want to trim!".into(),
-                        kind: egui_toast::ToastKind::Error,
-                        options: egui_toast::ToastOptions::default().duration_in_seconds(4.0).show_progress(true),
-                    });
-                }
-                if self.output_location.is_none() {
-                    toasts.add(egui_toast::Toast {
-                        text: "You need to provide the path to the output file!".into(),
-                        kind: egui_toast::ToastKind::Error,
-                        options: egui_toast::ToastOptions::default().duration_in_seconds(4.0).show_progress(true),
-                    });
-                }
-                // Having these as separate "if" statements lets multiple toasts appear.
-                if self.picked_path.is_some() && self.output_location.is_some() {
-                    self.trim_can_continue = true;
-                }
-
-                if self.trim_can_continue {
-                    let path = self.picked_path.as_ref().unwrap();
-                    let time_start = &num_to_time(self.start_trim as f32);
-                    let time_end = &num_to_time(self.end_trim as f32);
-                    let output = self.output_location.as_ref().unwrap();
-                    if !self.slow_trim {
-                        args = vec!["-ss", time_start, "-to", time_end, "-i", path, "-c", "copy", output];
-                    } else {
-                        // TODO: make async
-                        args = vec!["-i", path, "-ss", time_start, "-t", time_end, "-async", "1", output];
+            
+            ui.horizontal(|ui| {
+                let mut args;
+                if ui.button("Trim").clicked() {
+                    ctx.set_cursor_icon(egui::CursorIcon::Progress);
+                    if self.picked_path.is_none() {
+                        toasts.add(egui_toast::Toast {
+                            text: "You need to provide the path to the video you want to trim!".into(),
+                            kind: egui_toast::ToastKind::Error,
+                            options: egui_toast::ToastOptions::default().duration_in_seconds(4.0).show_progress(true),
+                        });
                     }
-                    if self.overwrite {
-                        args.push("-y");
+                    if self.output_location.is_none() {
+                        toasts.add(egui_toast::Toast {
+                            text: "You need to provide the path to the output file!".into(),
+                            kind: egui_toast::ToastKind::Error,
+                            options: egui_toast::ToastOptions::default().duration_in_seconds(4.0).show_progress(true),
+                        });
                     }
-                    if self.trim_to_end {
+                    // Having these as separate "if" statements lets multiple toasts appear.
+                    if self.picked_path.is_some() && self.output_location.is_some() {
+                        self.trim_can_continue = true;
+                    }
+    
+                    if self.trim_can_continue {
+                        let path = self.picked_path.as_ref().unwrap();
+                        let time_start = &num_to_time(self.start_trim as f32);
+                        let time_end = &num_to_time(self.end_trim as f32);
+                        let output = self.output_location.as_ref().unwrap();
                         if !self.slow_trim {
-                            args.remove(2);
-                            args.remove(2);
+                            args = vec!["-ss", time_start, "-to", time_end, "-i", path, "-c", "copy", output];
                         } else {
-                            args.remove(4);
-                            args.remove(4);
+                            args = vec!["-i", path, "-ss", time_start, "-t", time_end, "-async", "1", output];
+                        }
+                        if self.overwrite {
+                            args.push("-y");
+                        }
+                        if self.trim_to_end {
+                            if !self.slow_trim {
+                                args.remove(2);
+                                args.remove(2);
+                            } else {
+                                args.remove(4);
+                                args.remove(4);
+                            }
+                        }
+                        let cmd = Command::new("ffmpeg").args(args).output().expect("Error when trimming video!");
+                        if !self.ffmpeg_gen_output_made {
+                            self.ffmpeg_gen_output_made = true;
+                            self.ffmpeg_gen_output = Some(String::from_utf8_lossy(&cmd.stderr).into_owned());
+                        }
+    
+                        if cmd.status.success() {
+                            self.trim_finished = true;
                         }
                     }
-                    let cmd = Command::new("ffmpeg").args(args).output().expect("Error when trimming video!");
-                    if !self.ffmpeg_gen_output_made {
-                        self.ffmpeg_gen_output_made = true;
-                        self.ffmpeg_gen_output = Some(String::from_utf8_lossy(&cmd.stderr).into_owned());
-                    }
-
-                    if cmd.status.success() {
-                        self.trim_finished = true;
-                    }
                 }
-            }
+                if ui.button("Refresh Data").clicked() {
+                    *self = Self::default();
+                }
+            }); 
 
             toasts.show(ctx);
 
@@ -333,9 +338,18 @@ impl eframe::App for QuickTrim {
                             }
                         });
                         ui.separator();
-                        if ui.button("Close").clicked() {
-                            *self = Self::default();
-                        }
+                        ui.horizontal(|ui| {
+                            let btn = ui.button("Close");
+                            ui.checkbox(&mut self.keep_existing_trim_data, "Don't Reset");
+                            if btn.clicked() {
+                                if self.keep_existing_trim_data {
+                                    self.trim_finished = false;
+                                }
+                                else {
+                                    *self = Self::default();
+                                }
+                            }
+                        });
                     });
             }
         });
