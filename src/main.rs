@@ -13,11 +13,10 @@ use egui_toast::Toasts;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 // TODO:
-// - inputting custom value into value slider does not work
 // - make multithreaded
 // - windows right click open with
 // - settings window
-// - scrubbers on same y
+// - scrubbers on same y (maybe use https://docs.rs/egui/latest/egui/struct.Response.html#method.with_new_rect)
 fn main() -> Result<(), eframe::Error> {
     env_logger::init();
     let options = eframe::NativeOptions {
@@ -182,52 +181,35 @@ impl eframe::App for QuickTrim {
                         ui.end_row();
 
                         ui.label("Start Trim");
-                        // From https://docs.rs/egui/latest/egui/widgets/struct.DragValue.html#method.custom_formatter
-                        ui.add(
+                        let trim_start_drag = ui.add(
                             egui::DragValue::new(&mut self.start_trim)
                                 .clamp_range(0.0..=self.video_length as f32)
                                 .custom_formatter(|n, _| num_to_time(n as f32))
-                                .custom_parser(|s| {
-                                    let parts: Vec<&str> = s.split(':').collect();
-                                    if parts.len() == 3 {
-                                        parts[0]
-                                            .parse::<i32>()
-                                            .and_then(|h| {
-                                                parts[1]
-                                                    .parse::<i32>()
-                                                    .and_then(|m| parts[2].parse::<i32>().map(|s| ((h * 60 * 60) + (m * 60) + s) as f64))
-                                            })
-                                            .ok()
-                                    } else {
-                                        None
-                                    }
-                                }),
+                                .custom_parser(|s| time_to_num(s)),
                         );
+                        if trim_start_drag.drag_stopped() || trim_start_drag.lost_focus() {
+                            if let Some(p) = &self.picked_path {
+                                let image_data = get_video_frame(&p, &num_to_time(self.start_trim));
+                                self.preview_image_start_handle = Some(ui.ctx().load_texture("preview_end", image_data, Default::default()));
+                            }
+                        }
                         ui.end_row();
 
                         ui.label("End Trim");
                         ui.horizontal(|ui| {
-                            ui.add_enabled(
+                            let trim_end_drag = ui.add_enabled(
                                 !self.trim_to_end,
                                 egui::DragValue::new(&mut self.end_trim)
                                     .clamp_range(0.0..=self.video_length as f32)
                                     .custom_formatter(|n, _| num_to_time(n as f32))
-                                    .custom_parser(|s| {
-                                        let parts: Vec<&str> = s.split(':').collect();
-                                        if parts.len() == 3 {
-                                            parts[0]
-                                                .parse::<i32>()
-                                                .and_then(|h| {
-                                                    parts[1]
-                                                        .parse::<i32>()
-                                                        .and_then(|m| parts[2].parse::<i32>().map(|s| ((h * 60 * 60) + (m * 60) + s) as f64))
-                                                })
-                                                .ok()
-                                        } else {
-                                            None
-                                        }
-                                    }),
+                                    .custom_parser(|s| time_to_num(s)),
                             );
+                            if trim_end_drag.drag_stopped() || trim_end_drag.lost_focus() {
+                                if let Some(p) = &self.picked_path {
+                                    let image_data = get_video_frame(&p, &num_to_time(self.end_trim));
+                                    self.preview_image_end_handle = Some(ui.ctx().load_texture("preview_end", image_data, Default::default()));
+                                }
+                            }
                             ui.checkbox(&mut self.trim_to_end, "To End")
                         });
                         ui.end_row();
@@ -357,12 +339,30 @@ impl eframe::App for QuickTrim {
     }
 }
 
+// From https://docs.rs/egui/latest/egui/widgets/struct.DragValue.html#method.custom_formatter
 fn num_to_time(n: f32) -> String {
     let hours = n as i32 / (60 * 60);
     let mins = (n as i32 / 60) % 60;
     let secs = n % 60.0;
     // add setting for millisecond precision?
-    format!("{hours:02}:{mins:02}:{secs:02.2}")
+    format!("{hours:02}:{mins:02}:{secs:05.2}")
+}
+
+// From https://docs.rs/egui/latest/egui/widgets/struct.DragValue.html#method.custom_formatter
+fn time_to_num(s: &str) -> Option<f64> {
+    let parts: Vec<&str> = s.split(':').collect();
+    if parts.len() == 3 {
+        parts[0]
+            .parse::<f32>()
+            .and_then(|h| {
+                parts[1]
+                    .parse::<f32>()
+                    .and_then(|m| parts[2].parse::<f32>().map(|s| ((h * 60.0 * 60.0) + (m * 60.0) + s) as f64))
+            })
+            .ok()
+    } else {
+        None
+    }
 }
 
 // custom scrubber widget
