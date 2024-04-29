@@ -90,6 +90,7 @@ impl Default for QuickTrim {
 
 impl eframe::App for QuickTrim {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        ctx.set_visuals(eframe::egui::Visuals::dark());
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.visuals_mut().override_text_color = Some(Color32::WHITE);
             ui.visuals_mut().panel_fill = Color32::from_hex("#353535").unwrap();
