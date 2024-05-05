@@ -17,6 +17,8 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 // - windows right click open with
 // - settings window
 // - scrubbers on same y (maybe use https://docs.rs/egui/latest/egui/struct.Response.html#method.with_new_rect)
+// - drag and drop
+// - change size of preview image to match orientation
 fn main() -> Result<(), eframe::Error> {
     env_logger::init();
     let options = eframe::NativeOptions {
@@ -126,7 +128,7 @@ impl eframe::App for QuickTrim {
                             if ui.button("Open file...").clicked() {
                                 if let Some(path) = rfd::FileDialog::new()
                                     .set_title("Open File to Trim")
-                                    .add_filter("Video File", &["mp4"])
+                                    .add_filter("Video File", &["mp4", "mov", "mkv"])
                                     .pick_file()
                                 {
                                     self.picked_path = Some(path.display().to_string());
