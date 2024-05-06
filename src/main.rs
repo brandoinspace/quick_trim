@@ -17,7 +17,6 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 // - windows right click open with
 // - settings window
 // - scrubbers on same y (maybe use https://docs.rs/egui/latest/egui/struct.Response.html#method.with_new_rect)
-// - drag and drop
 // - change size of preview image to match orientation (https://trac.ffmpeg.org/wiki/FFprobeTips#WidthxHeightresolution)
 fn main() -> Result<(), eframe::Error> {
     env_logger::init();
@@ -25,7 +24,8 @@ fn main() -> Result<(), eframe::Error> {
         viewport: egui::ViewportBuilder::default()
             .with_icon(eframe::icon_data::from_png_bytes(&include_bytes!("../assets/icon.png")[..]).unwrap())
             .with_inner_size([656.0, 440.0])
-            .with_resizable(false),
+            .with_resizable(false)
+            .with_drag_and_drop(true),
         ..Default::default()
     };
     eframe::run_native(
@@ -40,7 +40,7 @@ fn main() -> Result<(), eframe::Error> {
 
 // File picker based off of:
 // https://github.com/emilk/egui/blob/master/examples/file_dialog/src/main.rs
-struct QuickTrim {
+pub struct QuickTrim {
     picked_path: Option<String>,
     start_trim: f32,
     end_trim: f32,
@@ -61,6 +61,7 @@ struct QuickTrim {
     preview_image_start_handle: Option<egui::TextureHandle>,
     preview_image_end_handle: Option<egui::TextureHandle>,
     keep_existing_trim_data: bool,
+    dropped_file: bool,
 }
 
 impl Default for QuickTrim {
@@ -86,6 +87,7 @@ impl Default for QuickTrim {
             preview_image_start_handle: None,
             preview_image_end_handle: None,
             keep_existing_trim_data: false,
+            dropped_file: false,
         }
     }
 }
@@ -97,8 +99,6 @@ impl eframe::App for QuickTrim {
             ui.visuals_mut().override_text_color = Some(Color32::WHITE);
             ui.visuals_mut().panel_fill = Color32::from_hex("#353535").unwrap();
 
-            // let temp_dir = TempDir::new().unwrap();
-            // let frame_temp = temp_dir.child("frame1");
             ui.vertical_centered_justified(|ui| {
                 ui.heading("Quick Trim");
 
@@ -132,38 +132,7 @@ impl eframe::App for QuickTrim {
                                     .pick_file()
                                 {
                                     self.picked_path = Some(path.display().to_string());
-                                    let cmd = Command::new("ffprobe")
-                                        .creation_flags(CREATE_NO_WINDOW)
-                                        .args([
-                                            "-v",
-                                            "error",
-                                            "-select_streams",
-                                            "v:0",
-                                            "-show_entries",
-                                            "stream=duration",
-                                            "-of",
-                                            "default=noprint_wrappers=1:nokey=1",
-                                            &self.picked_path.as_ref().unwrap(),
-                                        ])
-                                        .stderr(Stdio::piped())
-                                        .output()
-                                        .expect("Could not get video length!");
-                                    self.end_trim = String::from_utf8_lossy(&cmd.stdout).into_owned().trim_end().parse::<f32>().unwrap();
-                                    self.start_trim = 0.0;
-                                    self.video_length = self.end_trim as u32;
-                                    self.scrubber_is_visible = true;
-                                    let image_data_start = get_video_frame(&self.picked_path.as_ref().unwrap(), &num_to_time(self.start_trim));
-                                    if let Some(d) = image_data_start {
-                                        self.preview_image_start_handle = Some(ui.ctx().load_texture("preview_start", d, Default::default()));
-                                    } else {
-                                        self.preview_image_start_handle = None;
-                                    }
-                                    let image_data_end = get_video_frame(&self.picked_path.as_ref().unwrap(), &num_to_time(self.end_trim));
-                                    if let Some(d) = image_data_end {
-                                        self.preview_image_end_handle = Some(ui.ctx().load_texture("preview_start", d, Default::default()));
-                                    } else {
-                                        self.preview_image_end_handle = None;
-                                    }
+                                    analyze_picked_video(self, ui);   
                                 }
                             }
                             if let Some(picked_path) = &self.picked_path {
@@ -356,6 +325,28 @@ impl eframe::App for QuickTrim {
                             }
                         });
                     });
+            }
+
+            ctx.input(|i| {
+                if !i.raw.dropped_files.is_empty() && i.raw.dropped_files.len() == 1 {
+                    if self.picked_path.is_some() {
+                        *self = Self::default();
+                    }
+                    let mut files = vec![];
+                    files.clone_from(&i.raw.dropped_files);
+                    let file = &files[0];
+                    if let Some(path) = &file.path {
+                        self.picked_path = Some(path.display().to_string());
+                    } else {
+                        self.picked_path = None;
+                    }
+                    self.dropped_file = true;
+                }
+            });
+
+            if self.dropped_file {
+                analyze_picked_video(self, ui);
+                self.dropped_file = false;
             }
         });
     }
@@ -605,4 +596,42 @@ fn get_video_frame(path: &str, time: &str) -> Option<ColorImage> {
         .output()
         .expect("Cannot read preview image!");
     load_image_from_memory(&f.stdout).ok()
+}
+
+pub fn analyze_picked_video(trim: &mut QuickTrim, ui: &mut egui::Ui) {
+    if let None = trim.picked_path {
+        return
+    }
+    let cmd = Command::new("ffprobe")
+        .creation_flags(CREATE_NO_WINDOW)
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            &trim.picked_path.as_ref().unwrap(),
+        ])
+        .stderr(Stdio::piped())
+        .output()
+        .expect("Could not get video length!");
+    trim.end_trim = String::from_utf8_lossy(&cmd.stdout).into_owned().trim_end().parse::<f32>().unwrap();
+    trim.start_trim = 0.0;
+    trim.video_length = trim.end_trim as u32;
+    trim.scrubber_is_visible = true;
+    let image_data_start = get_video_frame(&trim.picked_path.as_ref().unwrap(), &num_to_time(trim.start_trim));
+    if let Some(d) = image_data_start {
+        trim.preview_image_start_handle = Some(ui.ctx().load_texture("preview_start", d, Default::default()));
+    } else {
+        trim.preview_image_start_handle = None;
+    }
+    let image_data_end = get_video_frame(&trim.picked_path.as_ref().unwrap(), &num_to_time(trim.end_trim));
+    if let Some(d) = image_data_end {
+        trim.preview_image_end_handle = Some(ui.ctx().load_texture("preview_start", d, Default::default()));
+    } else {
+        trim.preview_image_end_handle = None;
+    }
 }
