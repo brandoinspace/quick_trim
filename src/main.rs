@@ -3,7 +3,7 @@
 use std::{
     env,
     os::windows::process::CommandExt,
-    process::{Command, Stdio},
+    process::Command,
 };
 
 use eframe::egui::{self, pos2, vec2, Align2, Color32, ColorImage};
@@ -615,7 +615,6 @@ pub fn analyze_picked_video(trim: &mut QuickTrim, ui: &mut egui::Ui) {
             "default=noprint_wrappers=1:nokey=1",
             &trim.picked_path.as_ref().unwrap(),
         ])
-        .stderr(Stdio::piped())
         .output()
         .expect("Could not get video length!");
     trim.end_trim = String::from_utf8_lossy(&cmd.stdout).into_owned().trim_end().parse::<f32>().unwrap();
