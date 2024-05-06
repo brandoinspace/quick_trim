@@ -6,7 +6,7 @@ use std::{
     process::{Command, Stdio},
 };
 
-use eframe::egui::{self, Align2, Color32, ColorImage};
+use eframe::egui::{self, pos2, vec2, Align2, Color32, ColorImage};
 use egui_toast::Toasts;
 
 // https://stackoverflow.com/a/75292572
@@ -18,7 +18,7 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 // - settings window
 // - scrubbers on same y (maybe use https://docs.rs/egui/latest/egui/struct.Response.html#method.with_new_rect)
 // - drag and drop
-// - change size of preview image to match orientation
+// - change size of preview image to match orientation (https://trac.ffmpeg.org/wiki/FFprobeTips#WidthxHeightresolution)
 fn main() -> Result<(), eframe::Error> {
     env_logger::init();
     let options = eframe::NativeOptions {
@@ -153,10 +153,17 @@ impl eframe::App for QuickTrim {
                                     self.video_length = self.end_trim as u32;
                                     self.scrubber_is_visible = true;
                                     let image_data_start = get_video_frame(&self.picked_path.as_ref().unwrap(), &num_to_time(self.start_trim));
-                                    self.preview_image_start_handle =
-                                        Some(ui.ctx().load_texture("preview_start", image_data_start, Default::default()));
+                                    if let Some(d) = image_data_start {
+                                        self.preview_image_start_handle = Some(ui.ctx().load_texture("preview_start", d, Default::default()));
+                                    } else {
+                                        self.preview_image_start_handle = None;
+                                    }
                                     let image_data_end = get_video_frame(&self.picked_path.as_ref().unwrap(), &num_to_time(self.end_trim));
-                                    self.preview_image_end_handle = Some(ui.ctx().load_texture("preview_start", image_data_end, Default::default()));
+                                    if let Some(d) = image_data_end {
+                                        self.preview_image_end_handle = Some(ui.ctx().load_texture("preview_start", d, Default::default()));
+                                    } else {
+                                        self.preview_image_end_handle = None;
+                                    }
                                 }
                             }
                             if let Some(picked_path) = &self.picked_path {
@@ -193,7 +200,11 @@ impl eframe::App for QuickTrim {
                         if trim_start_drag.drag_stopped() || trim_start_drag.lost_focus() {
                             if let Some(p) = &self.picked_path {
                                 let image_data = get_video_frame(&p, &num_to_time(self.start_trim));
-                                self.preview_image_start_handle = Some(ui.ctx().load_texture("preview_end", image_data, Default::default()));
+                                if let Some(d) = image_data {
+                                    self.preview_image_start_handle = Some(ui.ctx().load_texture("preview_end", d, Default::default()));
+                                } else {
+                                    ui.label("Could not load preview.");
+                                }
                             }
                         }
                         ui.end_row();
@@ -210,7 +221,11 @@ impl eframe::App for QuickTrim {
                             if trim_end_drag.drag_stopped() || trim_end_drag.lost_focus() {
                                 if let Some(p) = &self.picked_path {
                                     let image_data = get_video_frame(&p, &num_to_time(self.end_trim));
-                                    self.preview_image_end_handle = Some(ui.ctx().load_texture("preview_end", image_data, Default::default()));
+                                    if let Some(d) = image_data {
+                                        self.preview_image_end_handle = Some(ui.ctx().load_texture("preview_end", d, Default::default()));
+                                    } else {
+                                        ui.label("Could not load preview.");
+                                    }
                                 }
                             }
                             ui.checkbox(&mut self.trim_to_end, "To End")
@@ -243,69 +258,73 @@ impl eframe::App for QuickTrim {
                 ),
             );
 
+            
             let mut toasts = Toasts::new()
                 .anchor(Align2::RIGHT_BOTTOM, (-10.0, -10.0))
                 .direction(egui::Direction::BottomUp);
             
             ui.horizontal(|ui| {
-                let mut args;
-                if ui.button("Trim").clicked() {
-                    ctx.set_cursor_icon(egui::CursorIcon::Progress);
-                    if self.picked_path.is_none() {
-                        toasts.add(egui_toast::Toast {
-                            text: "You need to provide the path to the video you want to trim!".into(),
-                            kind: egui_toast::ToastKind::Error,
-                            options: egui_toast::ToastOptions::default().duration_in_seconds(4.0).show_progress(true),
-                        });
-                    }
-                    if self.output_location.is_none() {
-                        toasts.add(egui_toast::Toast {
-                            text: "You need to provide the path to the output file!".into(),
-                            kind: egui_toast::ToastKind::Error,
-                            options: egui_toast::ToastOptions::default().duration_in_seconds(4.0).show_progress(true),
-                        });
-                    }
-                    // Having these as separate "if" statements lets multiple toasts appear.
-                    if self.picked_path.is_some() && self.output_location.is_some() {
-                        self.trim_can_continue = true;
-                    }
-    
-                    if self.trim_can_continue {
-                        let path = self.picked_path.as_ref().unwrap();
-                        let time_start = &num_to_time(self.start_trim as f32);
-                        let time_end = &num_to_time(self.end_trim as f32);
-                        let output = self.output_location.as_ref().unwrap();
-                        if !self.slow_trim {
-                            args = vec!["-ss", time_start, "-to", time_end, "-i", path, "-c", "copy", output];
-                        } else {
-                            args = vec!["-i", path, "-ss", time_start, "-t", time_end, "-async", "1", output];
+                let buttons_rect = egui::Rect::from_min_size(pos2(8.0, 400.0), vec2(140.0, 45.0));
+                ui.allocate_ui_at_rect(buttons_rect, |ui| {
+                    let mut args;
+                    if ui.button("Trim").clicked() {
+                        ctx.set_cursor_icon(egui::CursorIcon::Progress);
+                        if self.picked_path.is_none() {
+                            toasts.add(egui_toast::Toast {
+                                text: "You need to provide the path to the video you want to trim!".into(),
+                                kind: egui_toast::ToastKind::Error,
+                                options: egui_toast::ToastOptions::default().duration_in_seconds(4.0).show_progress(true),
+                            });
                         }
-                        if self.overwrite {
-                            args.push("-y");
+                        if self.output_location.is_none() {
+                            toasts.add(egui_toast::Toast {
+                                text: "You need to provide the path to the output file!".into(),
+                                kind: egui_toast::ToastKind::Error,
+                                options: egui_toast::ToastOptions::default().duration_in_seconds(4.0).show_progress(true),
+                            });
                         }
-                        if self.trim_to_end {
+                        // Having these as separate "if" statements lets multiple toasts appear.
+                        if self.picked_path.is_some() && self.output_location.is_some() {
+                            self.trim_can_continue = true;
+                        }
+        
+                        if self.trim_can_continue {
+                            let path = self.picked_path.as_ref().unwrap();
+                            let time_start = &num_to_time(self.start_trim as f32);
+                            let time_end = &num_to_time(self.end_trim as f32);
+                            let output = self.output_location.as_ref().unwrap();
                             if !self.slow_trim {
-                                args.remove(2);
-                                args.remove(2);
+                                args = vec!["-ss", time_start, "-to", time_end, "-i", path, "-c", "copy", output];
                             } else {
-                                args.remove(4);
-                                args.remove(4);
+                                args = vec!["-i", path, "-ss", time_start, "-t", time_end, "-async", "1", output];
+                            }
+                            if self.overwrite {
+                                args.push("-y");
+                            }
+                            if self.trim_to_end {
+                                if !self.slow_trim {
+                                    args.remove(2);
+                                    args.remove(2);
+                                } else {
+                                    args.remove(4);
+                                    args.remove(4);
+                                }
+                            }
+                            let cmd = Command::new("ffmpeg").args(args).output().expect("Error when trimming video!");
+                            if !self.ffmpeg_gen_output_made {
+                                self.ffmpeg_gen_output_made = true;
+                                self.ffmpeg_gen_output = Some(String::from_utf8_lossy(&cmd.stderr).into_owned());
+                            }
+        
+                            if cmd.status.success() {
+                                self.trim_finished = true;
                             }
                         }
-                        let cmd = Command::new("ffmpeg").args(args).output().expect("Error when trimming video!");
-                        if !self.ffmpeg_gen_output_made {
-                            self.ffmpeg_gen_output_made = true;
-                            self.ffmpeg_gen_output = Some(String::from_utf8_lossy(&cmd.stderr).into_owned());
-                        }
-    
-                        if cmd.status.success() {
-                            self.trim_finished = true;
-                        }
                     }
-                }
-                if ui.button("Refresh Data").clicked() {
-                    *self = Self::default();
-                }
+                    if ui.button("Refresh Data").clicked() {
+                        *self = Self::default();
+                    }
+                });
             }); 
 
             toasts.show(ctx);
@@ -369,7 +388,6 @@ fn time_to_num(s: &str) -> Option<f64> {
 }
 
 // custom scrubber widget
-
 pub fn scroll_scrubber(
     ui: &mut egui::Ui,
     start: &mut f32,
@@ -405,6 +423,8 @@ pub fn scroll_scrubber(
         egui::pos2(rect.center().x + (preview_size.x / 2.0) + 5.0, preview_rect.center().y),
         preview_size,
     );
+    ui.put(preview_rect_start, egui::Label::new("Could Not Load Frame Preview"));
+    ui.put(preview_rect_end, egui::Label::new("Could Not Load Frame Preview"));
 
     let size = egui::vec2(10.0, 20.0);
     let half_width = size.x / 2.0;
@@ -496,9 +516,13 @@ pub fn scroll_scrubber(
             if let Some(path) = source_path {
                 let image_data = get_video_frame(&path, &num_to_time(if start_was_updated { *start } else { *end }));
                 if start_was_updated {
-                    *preview_image_start = Some(ui.ctx().load_texture("preview_start", image_data, Default::default()));
+                    if let Some(d) = image_data {
+                        *preview_image_start = Some(ui.ctx().load_texture("preview_start", d, Default::default()));
+                    }
                 } else {
-                    *preview_image_end = Some(ui.ctx().load_texture("preview_start", image_data, Default::default()));
+                    if let Some(d) = image_data {
+                        *preview_image_end = Some(ui.ctx().load_texture("preview_start", d, Default::default()));
+                    }
                 }
                 *preview_loaded = true;
             }
@@ -557,9 +581,9 @@ fn load_image_from_memory(image_data: &[u8]) -> Result<ColorImage, image::ImageE
     Ok(ColorImage::from_rgba_unmultiplied(size, pixels.as_slice()))
 }
 
-fn get_video_frame(path: &str, time: &str) -> ColorImage {
-    let p = String::from(path);
+fn get_video_frame(path: &str, time: &str) -> Option<ColorImage> {
     let t = String::from(time);
+    let p = String::from(path);
     let args = [
         "-ss",
         &t,
@@ -579,6 +603,6 @@ fn get_video_frame(path: &str, time: &str) -> ColorImage {
         .creation_flags(CREATE_NO_WINDOW)
         .args(args)
         .output()
-        .expect("Could not get image frame!");
-    load_image_from_memory(&f.stdout).expect("Could not load preview image!")
+        .expect("Cannot read preview image!");
+    load_image_from_memory(&f.stdout).ok()
 }
