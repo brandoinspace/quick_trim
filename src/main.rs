@@ -3,7 +3,7 @@
 use std::{
     env,
     os::windows::process::CommandExt,
-    process::{Command, Stdio}, vec,
+    process::Command, vec,
 };
 
 use eframe::egui::{self, pos2, vec2, Align2, Color32, ColorImage};
