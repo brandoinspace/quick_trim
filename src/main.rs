@@ -3,7 +3,7 @@
 use std::{
     env,
     os::windows::process::CommandExt,
-    process::{Command, Stdio},
+    process::{Command, Stdio}, vec,
 };
 
 use eframe::egui::{self, pos2, vec2, Align2, Color32, ColorImage};
@@ -62,6 +62,7 @@ pub struct QuickTrim {
     preview_image_end_handle: Option<egui::TextureHandle>,
     keep_existing_trim_data: bool,
     dropped_file: bool,
+    preview_image_dimensions: Vec<i32>,
 }
 
 impl Default for QuickTrim {
@@ -88,6 +89,7 @@ impl Default for QuickTrim {
             preview_image_end_handle: None,
             keep_existing_trim_data: false,
             dropped_file: false,
+            preview_image_dimensions: vec![],
         }
     }
 }
@@ -168,11 +170,9 @@ impl eframe::App for QuickTrim {
                         );
                         if trim_start_drag.drag_stopped() || trim_start_drag.lost_focus() {
                             if let Some(p) = &self.picked_path {
-                                let image_data = get_video_frame(&p, &num_to_time(self.start_trim));
+                                let image_data = get_video_frame(&p, &num_to_time(self.start_trim), &self.preview_image_dimensions);
                                 if let Some(d) = image_data {
                                     self.preview_image_start_handle = Some(ui.ctx().load_texture("preview_end", d, Default::default()));
-                                } else {
-                                    ui.label("Could not load preview.");
                                 }
                             }
                         }
@@ -189,11 +189,9 @@ impl eframe::App for QuickTrim {
                             );
                             if trim_end_drag.drag_stopped() || trim_end_drag.lost_focus() {
                                 if let Some(p) = &self.picked_path {
-                                    let image_data = get_video_frame(&p, &num_to_time(self.end_trim));
+                                    let image_data = get_video_frame(&p, &num_to_time(self.end_trim), &self.preview_image_dimensions);
                                     if let Some(d) = image_data {
                                         self.preview_image_end_handle = Some(ui.ctx().load_texture("preview_end", d, Default::default()));
-                                    } else {
-                                        ui.label("Could not load preview.");
                                     }
                                 }
                             }
@@ -224,6 +222,7 @@ impl eframe::App for QuickTrim {
                     &mut self.preview_has_loaded,
                     &mut self.preview_image_start_handle,
                     &mut self.preview_image_end_handle,
+                    &self.preview_image_dimensions,
                 ),
             );
 
@@ -389,8 +388,14 @@ pub fn scroll_scrubber(
     preview_loaded: &mut bool,
     preview_image_start: &mut Option<egui::TextureHandle>,
     preview_image_end: &mut Option<egui::TextureHandle>,
+    dim: &Vec<i32>,
 ) -> egui::Response {
-    let preview_size = egui::vec2(213.0, 120.0);
+    let preview_size;
+    if !dim.is_empty() {
+        preview_size = egui::vec2(dim[0] as f32, dim[1] as f32)
+    } else {
+        preview_size = egui::vec2(213.0, 120.0);
+    }
     let (preview_rect, _) = ui.allocate_exact_size(preview_size, egui::Sense::focusable_noninteractive());
     let mut start_was_updated = false;
     let mut end_was_updated = false;
@@ -414,8 +419,8 @@ pub fn scroll_scrubber(
         egui::pos2(rect.center().x + (preview_size.x / 2.0) + 5.0, preview_rect.center().y),
         preview_size,
     );
-    ui.put(preview_rect_start, egui::Label::new("Could Not Load Frame Preview"));
-    ui.put(preview_rect_end, egui::Label::new("Could Not Load Frame Preview"));
+    ui.put(preview_rect_start, egui::Label::new("Unable to Load Frame Preview"));
+    ui.put(preview_rect_end, egui::Label::new("Unable to Load Frame Preview"));
 
     let size = egui::vec2(10.0, 20.0);
     let half_width = size.x / 2.0;
@@ -505,7 +510,7 @@ pub fn scroll_scrubber(
     if ui.is_rect_visible(rect) {
         if (start_was_updated || end_was_updated) && !*preview_loaded {
             if let Some(path) = source_path {
-                let image_data = get_video_frame(&path, &num_to_time(if start_was_updated { *start } else { *end }));
+                let image_data = get_video_frame(&path, &num_to_time(if start_was_updated { *start } else { *end }), dim);
                 if start_was_updated {
                     if let Some(d) = image_data {
                         *preview_image_start = Some(ui.ctx().load_texture("preview_start", d, Default::default()));
@@ -547,6 +552,7 @@ pub fn scrubber<'a>(
     preview_loaded: &'a mut bool,
     preview_image_start: &'a mut Option<egui::TextureHandle>,
     preview_image_end: &'a mut Option<egui::TextureHandle>,
+    dim: &'a Vec<i32>,
 ) -> impl egui::Widget + 'a {
     move |ui: &mut egui::Ui| {
         scroll_scrubber(
@@ -559,6 +565,7 @@ pub fn scrubber<'a>(
             preview_loaded,
             preview_image_start,
             preview_image_end,
+            dim,
         )
     }
 }
@@ -572,7 +579,7 @@ fn load_image_from_memory(image_data: &[u8]) -> Result<ColorImage, image::ImageE
     Ok(ColorImage::from_rgba_unmultiplied(size, pixels.as_slice()))
 }
 
-fn get_video_frame(path: &str, time: &str) -> Option<ColorImage> {
+fn get_video_frame(path: &str, time: &str, dim: &Vec<i32>) -> Option<ColorImage> {
     let t = String::from(time);
     let p = String::from(path);
     let args = [
@@ -581,7 +588,7 @@ fn get_video_frame(path: &str, time: &str) -> Option<ColorImage> {
         "-i",
         &p,
         "-s",
-        "213x120",
+        &format!("{}x{}", dim[0], dim[1]),
         "-vframes",
         "1",
         "-c:v",
@@ -622,13 +629,43 @@ pub fn analyze_picked_video(trim: &mut QuickTrim, ui: &mut egui::Ui) {
     trim.start_trim = 0.0;
     trim.video_length = trim.end_trim as u32;
     trim.scrubber_is_visible = true;
-    let image_data_start = get_video_frame(&trim.picked_path.as_ref().unwrap(), &num_to_time(trim.start_trim));
+    if trim.preview_image_dimensions.is_empty() {
+        let dimensions = Command::new("ffprobe")
+            .creation_flags(CREATE_NO_WINDOW)
+            .args([
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=height,width",
+                "-of",
+                "csv=s=x:p=0",
+                &trim.picked_path.as_ref().unwrap(),
+            ])
+            .output()
+            .ok();
+        if let Some(dim) = dimensions {
+            let dim_text = String::from_utf8_lossy(&dim.stdout).into_owned().trim_end().to_owned();
+            let dim_split: Vec<f32> = dim_text.split("x").map(|d| d.parse::<f32>().unwrap()).collect();
+            let width = dim_split[0];
+            let height = dim_split[1];
+            if width < height {
+                trim.preview_image_dimensions = vec![67, 120];
+            } else if width > height {
+                trim.preview_image_dimensions = vec![213, 120];
+            } else {
+                trim.preview_image_dimensions = vec![120, 120];
+            }
+        }
+    }
+    let image_data_start = get_video_frame(&trim.picked_path.as_ref().unwrap(), &num_to_time(trim.start_trim), &trim.preview_image_dimensions);
     if let Some(d) = image_data_start {
         trim.preview_image_start_handle = Some(ui.ctx().load_texture("preview_start", d, Default::default()));
     } else {
         trim.preview_image_start_handle = None;
     }
-    let image_data_end = get_video_frame(&trim.picked_path.as_ref().unwrap(), &num_to_time(trim.end_trim));
+    let image_data_end = get_video_frame(&trim.picked_path.as_ref().unwrap(), &num_to_time(trim.end_trim), &trim.preview_image_dimensions);
     if let Some(d) = image_data_end {
         trim.preview_image_end_handle = Some(ui.ctx().load_texture("preview_start", d, Default::default()));
     } else {
