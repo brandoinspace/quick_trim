@@ -17,8 +17,6 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 // - windows right click open with
 // - settings window
 // - scrubbers on same y (maybe use https://docs.rs/egui/latest/egui/struct.Response.html#method.with_new_rect)
-// - change size of preview image to match orientation (https://trac.ffmpeg.org/wiki/FFprobeTips#WidthxHeightresolution)
-// - scrubbers can move past each other in both directions
 fn main() -> Result<(), eframe::Error> {
     env_logger::init();
     let options = eframe::NativeOptions {
@@ -466,6 +464,13 @@ pub fn scroll_scrubber(
     }
     if *end > video_length as f32 || (*end != video_length as f32 && to_end) {
         *end = video_length as f32;
+    }
+
+    if *start > *end {
+        *start = *end;
+    }
+    if *end < *start {
+        *end = *start;
     }
 
     let mut scrub_rect = rect;
