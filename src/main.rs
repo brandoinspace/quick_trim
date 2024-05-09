@@ -18,6 +18,7 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 // - settings window
 // - scrubbers on same y (maybe use https://docs.rs/egui/latest/egui/struct.Response.html#method.with_new_rect)
 // - change size of preview image to match orientation (https://trac.ffmpeg.org/wiki/FFprobeTips#WidthxHeightresolution)
+// - scrubbers can move past each other in both directions
 fn main() -> Result<(), eframe::Error> {
     env_logger::init();
     let options = eframe::NativeOptions {
@@ -402,8 +403,8 @@ pub fn scroll_scrubber(
 
     ui.add_space(5.0);
 
-    let scrub_size = egui::vec2(640.0, 36.0);
-    let drag_size = egui::vec2(640.0, 20.0);
+    let scrub_size = egui::vec2(640.0, 25.0);
+    let drag_size = egui::vec2(640.0, 15.0);
 
     let trim_step = video_length as f32 / 660.0;
 
@@ -422,10 +423,10 @@ pub fn scroll_scrubber(
     ui.put(preview_rect_start, egui::Label::new("Unable to Load Frame Preview"));
     ui.put(preview_rect_end, egui::Label::new("Unable to Load Frame Preview"));
 
-    let size = egui::vec2(10.0, 20.0);
-    let half_width = size.x / 2.0;
-    let mut left_drag_scrub_rect = egui::Rect::from_center_size(egui::pos2(rect.left() + half_width, left_drag_rect.center().y), size);
-    let mut right_drag_scrub_rect = egui::Rect::from_center_size(egui::pos2(rect.right() - half_width, right_drag_rect.center().y), size);
+    let handle_size = egui::vec2(10.0, 15.0);
+    let half_width = handle_size.x / 2.0;
+    let mut left_drag_scrub_rect = egui::Rect::from_center_size(egui::pos2(rect.left() + half_width, left_drag_rect.center().y), handle_size);
+    let mut right_drag_scrub_rect = egui::Rect::from_center_size(egui::pos2(rect.right() - half_width, right_drag_rect.center().y), handle_size);
 
     left_response = left_response.on_hover_and_drag_cursor(egui::CursorIcon::ResizeHorizontal);
     if left_response.dragged() {
@@ -651,11 +652,11 @@ pub fn analyze_picked_video(trim: &mut QuickTrim, ui: &mut egui::Ui) {
             let width = dim_split[0];
             let height = dim_split[1];
             if width < height {
-                trim.preview_image_dimensions = vec![67, 120];
+                trim.preview_image_dimensions = vec![81, 145];
             } else if width > height {
-                trim.preview_image_dimensions = vec![213, 120];
+                trim.preview_image_dimensions = vec![257, 145];
             } else {
-                trim.preview_image_dimensions = vec![120, 120];
+                trim.preview_image_dimensions = vec![145, 145];
             }
         }
     }
